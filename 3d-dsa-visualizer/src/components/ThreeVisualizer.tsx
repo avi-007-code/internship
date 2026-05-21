@@ -1,9 +1,210 @@
 import React, { useRef, useState, useMemo, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Stars, ContactShadows, Text, Billboard } from "@react-three/drei";
+import { OrbitControls, ContactShadows, Text, Billboard } from "@react-three/drei";
 import { useAlgorithmStore } from "../context/AlgorithmContext";
 import { Node3D, Edge3D } from "../types";
 import * as THREE from "three";
+
+interface StarData {
+  pos: THREE.Vector3;
+  speed: number;
+  len: number;
+}
+
+// Custom 3D particle starfield that stretches into speed lines (light streaks) during space warp transitions
+function WarpStarfield({ isLanding, warpActive }: { isLanding: boolean; warpActive: boolean }) {
+  const lineRef = useRef<THREE.LineSegments>(null);
+  const { invalidate } = useThree();
+
+  const count = 400;
+
+  // Initialize star coordinates deep into the scene
+  const stars = useMemo<StarData[]>(() => {
+    const data: StarData[] = [];
+    for (let i = 0; i < count; i++) {
+      const x = (Math.random() - 0.5) * 45;
+      const y = (Math.random() - 0.5) * 45;
+      const z = Math.random() * -120;
+      data.push({
+        pos: new THREE.Vector3(x, y, z),
+        speed: 0.12 + Math.random() * 0.18,
+        len: 0.1,
+      });
+    }
+    return data;
+  }, []);
+
+  const [positions, colors] = useMemo(() => {
+    const posArr = new Float32Array(count * 6); // 2 vertices per segment = 6 floats
+    const colArr = new Float32Array(count * 6);
+
+    const colorChoices = [
+      new THREE.Color("#FFFFFF"),
+      new THREE.Color("#00E5FF"), // Cyan
+      new THREE.Color("#7C3AED"), // Purple
+    ];
+
+    for (let i = 0; i < count; i++) {
+      const col = colorChoices[i % colorChoices.length];
+      colArr[i * 6] = col.r;
+      colArr[i * 6 + 1] = col.g;
+      colArr[i * 6 + 2] = col.b;
+      colArr[i * 6 + 3] = col.r * 0.45;
+      colArr[i * 6 + 4] = col.g * 0.45;
+      colArr[i * 6 + 5] = col.b * 0.45;
+    }
+
+    return [posArr, colArr];
+  }, []);
+
+  useFrame(() => {
+    if (!lineRef.current) return;
+
+    const geo = lineRef.current.geometry;
+    const posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
+
+    stars.forEach((star, idx) => {
+      let speedMultiplier = 1.0;
+      let targetLen = 0.15;
+
+      if (warpActive) {
+        speedMultiplier = 16.0; // Warp speed velocity boost
+        targetLen = 14.0;       // Extreme warp speed streaks
+      } else if (isLanding) {
+        speedMultiplier = 0.20;  // Elegant drift
+        targetLen = 0.08;       // Classic pinpoints
+      }
+
+      star.len = THREE.MathUtils.lerp(star.len, targetLen, 0.08);
+      const actualSpeed = star.speed * speedMultiplier;
+
+      star.pos.z += actualSpeed;
+
+      if (star.pos.z > 8.0) {
+        star.pos.z = -120;
+        star.pos.x = (Math.random() - 0.5) * 45;
+        star.pos.y = (Math.random() - 0.5) * 45;
+      }
+
+      posAttr.setXYZ(idx * 2, star.pos.x, star.pos.y, star.pos.z - star.len);
+      posAttr.setXYZ(idx * 2 + 1, star.pos.x, star.pos.y, star.pos.z);
+    });
+
+    posAttr.needsUpdate = true;
+    invalidate();
+  });
+
+  return (
+    <lineSegments ref={lineRef}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          args={[positions, 3]}
+        />
+        <bufferAttribute
+          attach="attributes-color"
+          args={[colors, 3]}
+        />
+      </bufferGeometry>
+      <lineBasicMaterial
+        vertexColors
+        transparent
+        opacity={0.75}
+        blending={THREE.AdditiveBlending}
+      />
+    </lineSegments>
+  );
+}
+
+// Glowing light core that implodes and pulses rapidly at the center warp coordinates
+function WarpPortal({ warpActive }: { warpActive: boolean }) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { invalidate } = useThree();
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const time = state.clock.getElapsedTime();
+
+    if (warpActive) {
+      const scale = Math.max(0.01, 1.8 + Math.sin(time * 25) * 0.45);
+      meshRef.current.scale.set(scale, scale, scale);
+      meshRef.current.visible = true;
+      invalidate();
+    } else {
+      meshRef.current.visible = false;
+    }
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0.5, -2.5]}>
+      <sphereGeometry args={[0.15, 16, 16]} />
+      <meshBasicMaterial color="#00E5FF" transparent opacity={0.95} blending={THREE.AdditiveBlending} />
+      
+      <mesh>
+        <ringGeometry args={[0.0, 0.65, 32]} />
+        <meshBasicMaterial color="#7C3AED" transparent opacity={0.5} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+      </mesh>
+    </mesh>
+  );
+}
+
+// Elegant camera controller that handles soft drift, rapid FOV stretch, and dashboard centering
+function CameraController({ isLanding, warpActive }: { isLanding: boolean; warpActive: boolean }) {
+  const { camera, invalidate } = useThree();
+
+  useEffect(() => {
+    if (!isLanding && !warpActive) {
+      // Reset camera position and FOV immediately upon landing completion
+      camera.position.set(0, 0.5, 7.2);
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = 50;
+        camera.updateProjectionMatrix();
+      }
+      invalidate();
+    }
+  }, [isLanding, warpActive, camera, invalidate]);
+
+  useFrame((state) => {
+    // Disable camera drift/zoom animations entirely during normal dashboard viewing to let OrbitControls handle interactions
+    if (!isLanding && !warpActive) return;
+
+    let needsUpdate = false;
+
+    if (warpActive) {
+      if (camera instanceof THREE.PerspectiveCamera) {
+        if (camera.fov < 149.5) {
+          camera.fov = THREE.MathUtils.lerp(camera.fov, 150, 0.12);
+          camera.updateProjectionMatrix();
+          needsUpdate = true;
+        }
+      }
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -3.2, 0.08);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, 0.1);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.5, 0.1);
+      needsUpdate = true;
+    } else if (isLanding) {
+      const time = state.clock.getElapsedTime();
+      camera.position.x = Math.sin(time * 0.35) * 0.6;
+      camera.position.y = Math.cos(time * 0.25) * 0.3 + 0.5;
+      camera.position.z = 7.2 + Math.sin(time * 0.15) * 0.4;
+
+      if (camera instanceof THREE.PerspectiveCamera) {
+        if (camera.fov !== 50) {
+          camera.fov = THREE.MathUtils.lerp(camera.fov, 50, 0.08);
+          camera.updateProjectionMatrix();
+          needsUpdate = true;
+        }
+      }
+    }
+
+    if (needsUpdate) {
+      invalidate();
+    }
+  });
+
+  return null;
+}
+
 
 // Custom cleanup component for node highlight rings
 function HighlightRing({ position }: { position: [number, number, number] }) {
@@ -257,7 +458,13 @@ function CanvasInvalidator({
   return null;
 }
 
-export default function ThreeVisualizer() {
+export default function ThreeVisualizer({
+  isLanding = false,
+  warpActive = false,
+}: {
+  isLanding?: boolean;
+  warpActive?: boolean;
+}) {
   // Leverage selective Zustand subscriptions to completely isolate Three canvas updates
   const nodes = useAlgorithmStore((state) => state.nodes);
   const edges = useAlgorithmStore((state) => state.edges);
@@ -284,6 +491,8 @@ export default function ThreeVisualizer() {
     return Math.min(-2, minNodeY - 1.5);
   }, [nodes]);
 
+  const showStructure = !isLanding && !warpActive;
+
   return (
     <div className="relative w-full h-full overflow-hidden select-none">
       {isLoading && (
@@ -300,11 +509,15 @@ export default function ThreeVisualizer() {
 
       {/* React Three Fiber Canvas with full on-demand performance engineering */}
       <Canvas
-        camera={{ position: [0, 0.5, 6.5], fov: 50 }}
+        camera={{ position: [0, 0.5, 7.2], fov: 50 }}
         shadows
         gl={{ antialias: true }}
-        frameloop="demand" // Scene uses ZERO GPU power when static
+        frameloop={isLanding || warpActive || isPlaying ? "always" : "demand"}
       >
+        {/* Custom Camera Controller & Warp Portal */}
+        <CameraController isLanding={isLanding} warpActive={warpActive} />
+        <WarpPortal warpActive={warpActive} />
+
         {/* On-Demand Invalidation Dispatcher */}
         <CanvasInvalidator nodes={nodes} edges={edges} isPlaying={isPlaying} />
 
@@ -314,68 +527,78 @@ export default function ThreeVisualizer() {
         <pointLight position={[-10, 5, -10]} intensity={0.5} />
         <directionalLight position={[0, 8, 4]} intensity={1.2} />
 
-        {/* Space background */}
-        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0.5} fade speed={1.5} />
+        {/* Custom 3D particle warp speed-line starfield replaces basic drei Stars */}
+        <WarpStarfield isLanding={isLanding} warpActive={warpActive} />
 
-        <group>
-          {/* Dynamic Edge cylinder links */}
-          {edges.map((edge) => {
-            const fNode = nodeMap[edge.from];
-            const tNode = nodeMap[edge.to];
-            if (!fNode || !tNode) return null;
-            return (
-              <ThreeEdge
-                key={edge.id}
-                edge={edge}
-                fromNode={fNode}
-                toNode={tNode}
-              />
-            );
-          })}
+        {showStructure && (
+          <group>
+            {/* Dynamic Edge cylinder links */}
+            {edges.map((edge) => {
+              const fNode = nodeMap[edge.from];
+              const tNode = nodeMap[edge.to];
+              if (!fNode || !tNode) return null;
+              return (
+                <ThreeEdge
+                  key={edge.id}
+                  edge={edge}
+                  fromNode={fNode}
+                  toNode={tNode}
+                />
+              );
+            })}
 
-          {/* Combined InstancedMesh for ALL nodes to minimize draw calls to 1 */}
-          {nodes.length > 0 && <InstancedNodes nodes={nodes} />}
+            {/* Combined InstancedMesh for ALL nodes to minimize draw calls to 1 */}
+            {nodes.length > 0 && <InstancedNodes nodes={nodes} />}
 
-          {/* Highlight halos on active items */}
-          {nodes.map((node) => {
-            if (!node.isHighlighted) return null;
-            return <HighlightRing key={`ring-${node.id}`} position={node.position} />;
-          })}
+            {/* Highlight halos on active items */}
+            {nodes.map((node) => {
+              if (!node.isHighlighted) return null;
+              return <HighlightRing key={`ring-${node.id}`} position={node.position} />;
+            })}
 
-          {/* Labels positioned cleanly above */}
-          {nodes.map((node) => (
-            <NodeLabel key={`label-${node.id}`} label={node.label} position={node.position} />
-          ))}
-        </group>
+            {/* Labels positioned cleanly above */}
+            {nodes.map((node) => (
+              <NodeLabel key={`label-${node.id}`} label={node.label} position={node.position} />
+            ))}
+          </group>
+        )}
 
         {/* Bottom grid helper */}
-        <gridHelper args={[40, 40, "#1e293b", "#0f172a"]} position={[0, floorY, 0]} />
+        {showStructure && (
+          <gridHelper args={[40, 40, "#1e293b", "#0f172a"]} position={[0, floorY, 0]} />
+        )}
 
         {/* Contact shadow helper */}
-        <ContactShadows
-          position={[0, floorY, 0]}
-          opacity={0.7}
-          scale={15}
-          blur={2.5}
-          far={4}
-        />
+        {showStructure && (
+          <ContactShadows
+            position={[0, floorY, 0]}
+            opacity={0.7}
+            scale={15}
+            blur={2.5}
+            far={4}
+          />
+        )}
 
         {/* User controls trigger on-demand frames automatically during cursor drags */}
-        <OrbitControls
-          enablePan={true}
-          enableZoom={true}
-          enableRotate={true}
-          minDistance={2}
-          maxDistance={15}
-          maxPolarAngle={Math.PI / 2 + 0.1}
-        />
+        {showStructure && (
+          <OrbitControls
+            enablePan={true}
+            enableZoom={true}
+            enableRotate={true}
+            minDistance={2}
+            maxDistance={15}
+            maxPolarAngle={Math.PI / 2 + 0.1}
+          />
+        )}
       </Canvas>
 
-      <div className="absolute bottom-4 right-4 z-10 pointer-events-none px-2.5 py-1 bg-slate-900/45 rounded-lg border border-white/5 backdrop-blur-md shadow-lg">
-        <span className="text-[10px] font-sans text-white/40 tracking-wide font-medium">
-          Drag to Rotate • Scroll to Zoom
-        </span>
-      </div>
+      {showStructure && (
+        <div className="absolute bottom-4 right-4 z-10 pointer-events-none px-2.5 py-1 bg-slate-900/45 rounded-lg border border-white/5 backdrop-blur-md shadow-lg">
+          <span className="text-[10px] font-sans text-white/40 tracking-wide font-medium">
+            Drag to Rotate • Scroll to Zoom
+          </span>
+        </div>
+      )}
     </div>
   );
 }

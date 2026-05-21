@@ -12,6 +12,8 @@ import GraphPanel from "./components/GraphPanel";
 import QuizCard from "./components/QuizCard";
 import ExpertSettings from "./components/ExpertSettings";
 import ThreeVisualizer from "./components/ThreeVisualizer";
+import LandingPage from "./components/LandingPage";
+import { motion, AnimatePresence } from "motion/react";
 import { Sparkles, Award, BookOpen } from "lucide-react";
 
 function HUDLayout() {
@@ -117,6 +119,17 @@ function HUDLayout() {
 }
 
 export default function App() {
+  const [isLanding, setIsLanding] = useState(true);
+  const [isWarping, setIsWarping] = useState(false);
+
+  const handleBegin = () => {
+    setIsWarping(true);
+    setTimeout(() => {
+      setIsLanding(false);
+      setIsWarping(false);
+    }, 1500);
+  };
+
   return (
     <AlgorithmProvider>
       <div 
@@ -125,15 +138,31 @@ export default function App() {
       >
         {/* SECTION 1: Full-Screen 3D Centerpiece Backdrop */}
         <div className="absolute inset-0 z-0 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-          <ThreeVisualizer />
+          <ThreeVisualizer isLanding={isLanding} warpActive={isWarping} />
         </div>
 
         {/* Subtle decorative background gradients underneath */}
         <div className="absolute top-1/4 left-1/3 w-80 h-80 bg-cyan-500/10 rounded-full blur-[120px] pointer-events-none z-10" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-[140px] pointer-events-none z-10" />
 
-        {/* SECTION 2: Spotlight/Glassmorphic HUD Interactivity Wrap */}
-        <HUDLayout />
+        {/* SECTION 2: Landing Overlay and HUD Layout */}
+        <AnimatePresence>
+          {isLanding && (
+            <LandingPage key="landing" onBegin={handleBegin} isWarping={isWarping} />
+          )}
+        </AnimatePresence>
+
+        {!isLanding && (
+          <motion.div
+            key="hud-layout-container"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1.0, ease: "easeOut" }}
+            className="absolute inset-0 pointer-events-none"
+          >
+            <HUDLayout />
+          </motion.div>
+        )}
       </div>
     </AlgorithmProvider>
   );
