@@ -3,22 +3,42 @@ import { useAlgorithmStore } from "../context/AlgorithmContext";
 import { Sliders, Terminal, Trash2, X, Info, Eye, EyeOff } from "lucide-react";
 
 export default function ExpertSettings() {
-  const { logs, clearData, geminiApiKey, setGeminiApiKey } = useAlgorithmStore();
+  const { 
+    logs, 
+    clearData, 
+    geminiApiKey, 
+    setGeminiApiKey, 
+    groqApiKey, 
+    setGroqApiKey,
+    selectedProvider,
+    setSelectedProvider
+  } = useAlgorithmStore();
+  
   const [isOpen, setIsOpen] = useState(false);
   const [showKey, setShowKey] = useState(false);
-  const [tempKey, setTempKey] = useState(geminiApiKey);
+  
+  const activeKey = selectedProvider === "AISTUDIO" ? geminiApiKey : groqApiKey;
+  const [tempKey, setTempKey] = useState(activeKey);
 
   useEffect(() => {
-    setTempKey(geminiApiKey);
-  }, [geminiApiKey]);
+    setTempKey(activeKey);
+  }, [selectedProvider, geminiApiKey, groqApiKey, activeKey]);
 
   const handleSaveKey = () => {
-    setGeminiApiKey(tempKey.trim());
+    if (selectedProvider === "AISTUDIO") {
+      setGeminiApiKey(tempKey.trim());
+    } else {
+      setGroqApiKey(tempKey.trim());
+    }
   };
 
   const handleClearKey = () => {
     setTempKey("");
-    setGeminiApiKey("");
+    if (selectedProvider === "AISTUDIO") {
+      setGeminiApiKey("");
+    } else {
+      setGroqApiKey("");
+    }
   };
 
   return (
@@ -74,26 +94,47 @@ export default function ExpertSettings() {
               <div className="flex flex-col">
                 <span className="text-[10px] text-white/40 font-mono font-medium">Core SDK</span>
                 <span className="text-xs text-emerald-400 font-mono font-semibold">
-                  {geminiApiKey ? "Gemini Client" : "Gemini 3.5-F"}
+                  {geminiApiKey ? "Gemini Client" : groqApiKey ? "Groq Client" : "Gemini 3.5-F"}
                 </span>
               </div>
             </div>
           </div>
+          {/* Provider Selection & API Key Configuration */}
+          <div className="space-y-2 border-t border-white/10 pt-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-mono text-white/40 uppercase font-semibold block leading-none">
+                AI Service Integration
+              </span>
+              <div className="relative">
+                <select
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value as "AISTUDIO" | "GROQ")}
+                  className="bg-black/60 border border-white/15 rounded-md px-2 py-0.5 text-[10px] font-mono text-cyan-400 focus:outline-none focus:border-cyan-500/50 transition-all cursor-pointer hover:bg-black/80"
+                >
+                  <option value="AISTUDIO">Google AI Studio</option>
+                  <option value="GROQ">Groq API</option>
+                </select>
+              </div>
+            </div>
 
-          {/* Gemini API Key Configuration */}
-          <div className="space-y-1.5 border-t border-white/10 pt-3">
-            <span className="text-[9px] font-mono text-white/40 uppercase font-semibold block leading-none">
-              Client-Side Google Gemini API
-            </span>
             <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-2">
               <div className="text-[10px] text-white/60 leading-normal">
-                Avoid backend payload limits by routing AI traffic directly through your client browser using a personal <span className="text-cyan-400 font-mono font-medium">gemini-2.5-flash</span> Key.
+                {selectedProvider === "AISTUDIO" ? (
+                  <span>
+                    Avoid backend limits by routing traffic via your browser using a personal <span className="text-cyan-400 font-mono font-medium">gemini-2.5-flash</span> Key.
+                  </span>
+                ) : (
+                  <span>
+                    Direct client-side execution to high-speed Groq models (<span className="text-cyan-400 font-mono font-medium">llama-3.3-70b-versatile</span>) for instant 3D layout calculations.
+                  </span>
+                )}
               </div>
+              
               <div className="flex gap-2">
                 <div className="relative flex-1">
                   <input
                     type={showKey ? "text" : "password"}
-                    placeholder="AIzaSy..."
+                    placeholder={selectedProvider === "AISTUDIO" ? "AIzaSy..." : "gsk_..."}
                     value={tempKey}
                     onChange={(e) => setTempKey(e.target.value)}
                     className="w-full bg-black/40 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder-white/20 focus:outline-none focus:border-cyan-500/50 transition-all pr-8"
@@ -114,11 +155,12 @@ export default function ExpertSettings() {
                   Save
                 </button>
               </div>
-              {geminiApiKey && (
+
+              {activeKey && (
                 <div className="flex items-center justify-between text-[10px] pt-1">
                   <span className="text-emerald-400 font-medium flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    ✓ Client Key Engaged
+                    ✓ {selectedProvider === "AISTUDIO" ? "Gemini Key Engaged" : "Groq Key Engaged"}
                   </span>
                   <button
                     onClick={handleClearKey}

@@ -172,13 +172,13 @@ function CameraController({ isLanding, warpActive }: { isLanding: boolean; warpA
 
     if (warpActive) {
       if (camera instanceof THREE.PerspectiveCamera) {
-        if (camera.fov < 149.5) {
-          camera.fov = THREE.MathUtils.lerp(camera.fov, 150, 0.12);
+        if (camera.fov !== 50) {
+          camera.fov = THREE.MathUtils.lerp(camera.fov, 50, 0.1);
           camera.updateProjectionMatrix();
           needsUpdate = true;
         }
       }
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, -3.2, 0.08);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 7.2, 0.1);
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, 0, 0.1);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0.5, 0.1);
       needsUpdate = true;
@@ -232,6 +232,7 @@ function HighlightRing({ position }: { position: [number, number, number] }) {
 function NodeLabel({ label, position }: { label: string; position: [number, number, number] }) {
   const structureType = useAlgorithmStore((state) => state.structureType);
   const isStack = structureType === "STACK";
+  const isGraph = structureType === "GRAPH";
   const labelPos: [number, number, number] = isStack
     ? [position[0] + 1.1, position[1], position[2]]
     : [position[0], position[1] + 0.75, position[2]];
@@ -239,7 +240,7 @@ function NodeLabel({ label, position }: { label: string; position: [number, numb
   return (
     <Billboard position={labelPos}>
       <Text
-        fontSize={0.32}
+        fontSize={isGraph ? 0.24 : 0.32}
         color="#FFFFFF"
         anchorX={isStack ? "left" : "center"}
         anchorY="middle"
@@ -251,6 +252,7 @@ function NodeLabel({ label, position }: { label: string; position: [number, numb
     </Billboard>
   );
 }
+
 
 // InstancedMesh container that merges all spheres/blocks into 1 draw call
 function InstancedNodes({ nodes }: { nodes: Node3D[] }) {

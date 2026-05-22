@@ -303,9 +303,9 @@ export const PRESET_STRUCTURES: Record<string, DSAStructure> = {
     structure_type: "STACK",
     explanation: "A Stack is a linear data structure following Last-In, First-Out (LIFO) rules.",
     nodes: [
-      { id: "S3", label: "Top: 40", position: [0, 1.5, 0], color: "#FF1744" },
-      { id: "S2", label: "30", position: [0, 0.5, 0], color: "#80F" },
-      { id: "S1", label: "20", position: [0, -0.5, 0], color: "#80F" },
+      { id: "S3", label: "Top: 40", position: [0, 1.5, 0], color: "#8B5CF6" },
+      { id: "S2", label: "30", position: [0, 0.5, 0], color: "#6366F1" },
+      { id: "S1", label: "20", position: [0, -0.5, 0], color: "#3B82F6" },
       { id: "S0", label: "Base: 10", position: [0, -1.5, 0], color: "#00E5FF" }
     ],
     edges: [

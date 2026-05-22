@@ -993,40 +993,62 @@ function generateFallbackResponse(prompt: string, structureType: string, request
   }
 }
 
-// Model execution helper that retries transient exceptions with exponential delays
-async function generateContentWithRetry(userText: string, instruction: string, maxAttempts = 3) {
-  let attempt = 0;
-  let delay = 1000; // ms
+// Model execution helper that retries transient exceptions and falls back to alternative Gemini tiers automatically
+async function generateContentWithRetry(userText: string, instruction: string) {
+  const models = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-pro"
+  ];
+  
+  let lastError: any = null;
 
-  while (attempt < maxAttempts) {
-    try {
-      attempt++;
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: userText,
-        config: {
-          systemInstruction: instruction,
-          responseMimeType: "application/json",
-          temperature: 0.2,
-        },
-      });
-      return response;
-    } catch (err: any) {
-      console.warn(`[Gemini Core] Attempt ${attempt} failed with response error:`, err.message || err);
-      
-      // If the error is an invalid API key, throw immediately without wasting time on retries
-      const errStr = String(err.message || err);
-      const isInvalidKey = errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID") || errStr.includes("INVALID_ARGUMENT") || err.status === 400;
-      
-      if (attempt >= maxAttempts || isInvalidKey) {
-        throw err;
+  for (const modelName of models) {
+    let attempt = 0;
+    const maxAttempts = 2; // Try each model up to 2 times before falling back
+    let delay = 800; // ms
+    
+    console.log(`[Gemini Core] Attempting contact with model tier: ${modelName}`);
+
+    while (attempt < maxAttempts) {
+      try {
+        attempt++;
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: userText,
+          config: {
+            systemInstruction: instruction,
+            responseMimeType: "application/json",
+            temperature: 0.2,
+          },
+        });
+        console.log(`[Gemini Core] Successfully generated content using model tier: ${modelName}`);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errStr = String(err.message || err);
+        const isInvalidKey = errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID") || errStr.includes("Key not found");
+        
+        if (isInvalidKey) {
+          console.error(`[Gemini Core] Invalid API Key detected. Aborting model fallback chain.`);
+          throw err;
+        }
+
+        console.warn(`[Gemini Core] Model tier ${modelName} (Attempt ${attempt}/${maxAttempts}) failed:`, err.message || err);
+
+        if (attempt < maxAttempts) {
+          const jitterDelay = delay * Math.pow(2, attempt - 1) + Math.random() * 200;
+          console.log(`[Gemini Core] Retrying ${modelName} after ${Math.round(jitterDelay)}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, jitterDelay));
+        }
       }
-      // Wait for backoff + slight random jitter
-      const jitterDelay = delay * Math.pow(2, attempt - 1) + Math.random() * 300;
-      console.log(`[Gemini Core] Waiting ${Math.round(jitterDelay)}ms before retrying contact...`);
-      await new Promise((resolve) => setTimeout(resolve, jitterDelay));
     }
+    console.warn(`[Gemini Core] Model tier ${modelName} exhausted. Falling back to next available tier...`);
   }
+
+  throw lastError || new Error("All fallback model tiers failed to generate a response.");
 }
 
 function getAvailablePort(startPort: number): Promise<number> {
@@ -1119,11 +1141,13 @@ Return ONLY the raw JSON string content. Do not include markdown codeblocks (no 
 
       const userText = `Request: "${prompt}"
 Structure Type: ${structureType || "BST"}
-Request Type: ${requestType || "CREATE_STRUCTURE"}
+RequestType: ${requestType || "CREATE_STRUCTURE"}
 Current Nodes State: ${JSON.stringify(currentNodes || [])}
 Current Edges State: ${JSON.stringify(currentEdges || [])}
 
-Please calculate 3D coordinates, layout the nodes and edges, write the explanation, and include steps if animating an algorithm or operation. Keep the existing structure intact and perform the operations incrementally if nodes are already present!`;
+Please calculate 3D coordinates, layout the nodes and edges, write the explanation, and include steps if animating an algorithm or operation.
+If the request is to create, build, or generate a new structure (or start fresh, e.g. "create a...", "build a...", "generate...", "new..."), you MUST ignore the Current Nodes State and Current Edges State and build a brand-new layout from scratch.
+Otherwise, if the request is an incremental modification (e.g. adding, connecting, deleting, or traversing elements in the existing structure), keep the existing structure intact and perform the operations incrementally on the current state!`;
 
       let responseText = "";
       try {

@@ -26,6 +26,10 @@ interface AlgorithmState {
   quizSubmitted: boolean;
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
+  groqApiKey: string;
+  setGroqApiKey: (key: string) => void;
+  selectedProvider: "AISTUDIO" | "GROQ";
+  setSelectedProvider: (provider: "AISTUDIO" | "GROQ") => void;
 
   addLog: (message: string, type?: LogItem["type"]) => void;
   setStructureType: (type: "LINKED_LIST" | "BST" | "GRAPH" | "HEAP" | "QUEUE" | "STACK") => void;
@@ -83,6 +87,8 @@ export const useAlgorithmStore = create<AlgorithmState>((set, get) => ({
   quizUserAnswer: null,
   quizSubmitted: false,
   geminiApiKey: typeof window !== "undefined" ? localStorage.getItem("gemini_api_key") || "" : "",
+  groqApiKey: typeof window !== "undefined" ? localStorage.getItem("groq_api_key") || "" : "",
+  selectedProvider: typeof window !== "undefined" ? (localStorage.getItem("selected_provider") || "AISTUDIO") as "AISTUDIO" | "GROQ" : "AISTUDIO",
 
   setGeminiApiKey: (key: string) => {
     if (typeof window !== "undefined") {
@@ -90,6 +96,22 @@ export const useAlgorithmStore = create<AlgorithmState>((set, get) => ({
     }
     set({ geminiApiKey: key });
     get().addLog(key ? "Local Gemini API Key configured. AI traffic is routed client-side." : "Local Gemini API Key cleared. AI traffic is routed server-side.", "success");
+  },
+
+  setGroqApiKey: (key: string) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("groq_api_key", key);
+    }
+    set({ groqApiKey: key });
+    get().addLog(key ? "Local Groq API Key configured. AI traffic is routed client-side via Groq." : "Local Groq API Key cleared.", "success");
+  },
+
+  setSelectedProvider: (provider: "AISTUDIO" | "GROQ") => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("selected_provider", provider);
+    }
+    set({ selectedProvider: provider });
+    get().addLog(`Switched active AI provider: ${provider === "AISTUDIO" ? "Google AI Studio" : "Groq"}`, "info");
   },
 
   addLog: (message, type = "info") => {
@@ -273,16 +295,19 @@ export const useAlgorithmStore = create<AlgorithmState>((set, get) => ({
       clearTimeout(playTimer);
       playTimer = null;
     }
-    const { structureType, nodes, edges, addLog, geminiApiKey } = get();
+    const { structureType, nodes, edges, addLog, geminiApiKey, groqApiKey, selectedProvider } = get();
     set({ isLoading: true, error: null, isPlaying: false });
 
-    let rawData: DSAStructure;
+    const cleanNodesForAI = nodes.map(n => ({
+      ...n,
+      label: String(n.label)
+        .replace(/^(?:Queue|Visiting|Visited|DFS Active|Backtracked|Front|Rear|Top|Base|Front\/Rear|Top\/Base|Incoming|New Front):\s*/i, "")
+        .replace(/\s*\(New\)/g, "")
+        .replace(/\s*\(Root\)/g, ""),
+      isHighlighted: false
+    }));
 
-    try {
-      if (geminiApiKey) {
-        addLog(`Transceiving client-side architectural request to Google Gemini API (using local Key)...`, "info");
-        
-        const systemInstruction = `You are the 'AI DSA Architect' for an interactive 3D Data Structure & Algorithm Learning App.
+    const systemInstruction = `You are the 'AI DSA Architect' for an interactive 3D Data Structure & Algorithm Learning App.
 Your sole job is to translate human requests into structured 3D visualization commands as a single valid JSON object.
 Do NOT include markdown formatting or backticks around the JSON. Your output must be parseable raw JSON.
 
@@ -335,56 +360,226 @@ Ensure each step contains the full updated list of nodes and edges, of which som
 
 Return ONLY the raw JSON string content. Do not include markdown codeblocks (no \`\`\`json, no \`\`\`).`;
 
-        const userText = `Request: "${prompt}"
+    const userText = `Request: "${prompt}"
 Structure Type: ${structureType || "BST"}
 Request Type: ${actionType || "CREATE_STRUCTURE"}
-Current Nodes State: ${JSON.stringify(nodes || [])}
+Current Nodes State: ${JSON.stringify(cleanNodesForAI || [])}
 Current Edges State: ${JSON.stringify(edges || [])}
 
-Please calculate 3D coordinates, layout the nodes and edges, write the explanation, and include steps if animating an algorithm or operation. Keep the existing structure intact and perform the operations incrementally if nodes are already present!`;
+Please calculate 3D coordinates, layout the nodes and edges, write the explanation, and include steps if animating an algorithm or operation.
+If the request is to create, build, or generate a new structure (or start fresh, e.g. "create a...", "build a...", "generate...", "new..."), you MUST ignore the Current Nodes State and Current Edges State and build a brand-new layout from scratch.
+Otherwise, if the request is an incremental modification (e.g. adding, connecting, deleting, or traversing elements in the existing structure), keep the existing structure intact and perform the operations incrementally on the current state!`;
 
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              contents: [
+    let rawData: DSAStructure;
+
+    try {
+      if (selectedProvider === "AISTUDIO" && geminiApiKey) {
+        addLog(`Transceiving client-side architectural request to Google Gemini API (using local Key)...`, "info");
+        
+        const clientModels = [
+          "gemini-2.5-flash",
+          "gemini-2.0-flash",
+          "gemini-1.5-flash",
+          "gemini-2.5-pro",
+          "gemini-1.5-pro"
+        ];
+        
+        let response = null;
+        let lastError: any = null;
+        let resData: any = null;
+
+        for (const modelName of clientModels) {
+          let attempt = 0;
+          const maxAttempts = 2; // Try each model up to 2 times
+          let delay = 800; // ms
+          let success = false;
+
+          addLog(`Attempting contact with local client model tier: ${modelName}`, "info");
+
+          while (attempt < maxAttempts) {
+            try {
+              attempt++;
+              response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`,
                 {
-                  parts: [
-                    {
-                      text: userText,
-                    },
-                  ],
-                },
-              ],
-              systemInstruction: {
-                parts: [
-                  {
-                    text: systemInstruction,
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
                   },
-                ],
-              },
-              generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.2,
-              },
-            }),
-          }
-        );
+                  body: JSON.stringify({
+                    contents: [
+                      {
+                        parts: [
+                          {
+                            text: userText,
+                          },
+                        ],
+                      },
+                    ],
+                    systemInstruction: {
+                      parts: [
+                        {
+                          text: systemInstruction,
+                        },
+                      ],
+                    },
+                    generationConfig: {
+                      responseMimeType: "application/json",
+                      temperature: 0.2,
+                    },
+                  }),
+                }
+              );
 
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          const errMsg = errData.error?.message || `HTTP ${response.status}: Failed to generate content.`;
-          throw new Error(errMsg);
+              if (response.ok) {
+                resData = await response.json();
+                success = true;
+                break;
+              } else {
+                const errData = await response.json().catch(() => ({}));
+                const errMsg = errData.error?.message || `HTTP ${response.status}: Failed to generate content.`;
+                lastError = new Error(errMsg);
+
+                // Stop immediately only if API key is invalid
+                const isInvalidKey = errMsg.includes("API key not valid") || errMsg.includes("API_KEY_INVALID") || errMsg.includes("Key not found");
+                if (isInvalidKey) {
+                  throw lastError;
+                }
+
+                console.warn(`[Gemini Client] Model tier ${modelName} (Attempt ${attempt}/${maxAttempts}) failed: ${errMsg}`);
+              }
+            } catch (err: any) {
+              lastError = err;
+              if (String(err.message).includes("API key not valid") || String(err.message).includes("API_KEY_INVALID") || String(err.message).includes("Key not found")) {
+                throw err;
+              }
+            }
+
+            if (attempt < maxAttempts) {
+              const jitterDelay = delay * Math.pow(2, attempt - 1) + Math.random() * 200;
+              await new Promise((resolve) => setTimeout(resolve, jitterDelay));
+            }
+          }
+
+          if (success && resData) {
+            addLog(`Successfully generated content using local model tier: ${modelName}`, "success");
+            break;
+          }
+          console.warn(`[Gemini Client] Model tier ${modelName} exhausted. Falling back to the next available tier...`);
         }
 
-        const resData = await response.json();
+        if (!resData) {
+          throw lastError || new Error("All client fallback model tiers failed to generate content.");
+        }
         const responseText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!responseText) {
           throw new Error("Empty response received from local Gemini API key.");
+        }
+
+        let cleanJSON = responseText.trim();
+        if (cleanJSON.startsWith("```json")) {
+          cleanJSON = cleanJSON.substring(7);
+        }
+        if (cleanJSON.endsWith("```")) {
+          cleanJSON = cleanJSON.substring(0, cleanJSON.length - 3);
+        }
+        cleanJSON = cleanJSON.trim();
+        rawData = JSON.parse(cleanJSON);
+
+      } else if (selectedProvider === "GROQ" && groqApiKey) {
+        addLog(`Transceiving client-side architectural request to Groq API (using local Key)...`, "info");
+
+        const groqModels = [
+          "llama-3.3-70b-versatile",
+          "mixtral-8x7b-32768",
+          "llama3-70b-8192"
+        ];
+
+        let response = null;
+        let lastError: any = null;
+        let resData: any = null;
+
+        for (const modelName of groqModels) {
+          let attempt = 0;
+          const maxAttempts = 2; // Try each model up to 2 times
+          let delay = 800; // ms
+          let success = false;
+
+          addLog(`Attempting contact with local Groq model tier: ${modelName}`, "info");
+
+          while (attempt < maxAttempts) {
+            try {
+              attempt++;
+              response = await fetch(
+                `https://api.groq.com/openai/v1/chat/completions`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${groqApiKey}`,
+                  },
+                  body: JSON.stringify({
+                    model: modelName,
+                    messages: [
+                      {
+                        role: "system",
+                        content: systemInstruction,
+                      },
+                      {
+                        role: "user",
+                        content: userText,
+                      },
+                    ],
+                    response_format: { type: "json_object" },
+                    temperature: 0.2,
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                resData = await response.json();
+                success = true;
+                break;
+              } else {
+                const errData = await response.json().catch(() => ({}));
+                const errMsg = errData.error?.message || `HTTP ${response.status}: Failed to generate content.`;
+                lastError = new Error(errMsg);
+
+                // Stop immediately if unauthorized or invalid API key
+                const isInvalidKey = response.status === 401 || errMsg.includes("API key not valid") || errMsg.includes("invalid_api_key") || errMsg.includes("Key not found");
+                if (isInvalidKey) {
+                  throw lastError;
+                }
+
+                console.warn(`[Groq Client] Model tier ${modelName} (Attempt ${attempt}/${maxAttempts}) failed: ${errMsg}`);
+              }
+            } catch (err: any) {
+              lastError = err;
+              if (response?.status === 401 || String(err.message).includes("API key not valid") || String(err.message).includes("invalid_api_key") || String(err.message).includes("Key not found")) {
+                throw err;
+              }
+            }
+
+            if (attempt < maxAttempts) {
+              const jitterDelay = delay * Math.pow(2, attempt - 1) + Math.random() * 200;
+              await new Promise((resolve) => setTimeout(resolve, jitterDelay));
+            }
+          }
+
+          if (success && resData) {
+            addLog(`Successfully generated content using local Groq model tier: ${modelName}`, "success");
+            break;
+          }
+          console.warn(`[Groq Client] Model tier ${modelName} exhausted. Falling back to the next available tier...`);
+        }
+
+        if (!resData) {
+          throw lastError || new Error("All client Groq fallback model tiers failed to generate content.");
+        }
+
+        const responseText = resData.choices?.[0]?.message?.content;
+        if (!responseText) {
+          throw new Error("Empty response received from local Groq API key.");
         }
 
         let cleanJSON = responseText.trim();
@@ -408,7 +603,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
             prompt,
             structureType,
             requestType: actionType,
-            currentNodes: nodes,
+            currentNodes: cleanNodesForAI,
             currentEdges: edges,
           }),
         });
@@ -448,6 +643,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
           edges: rawData.steps[0].edges,
         });
         addLog(`Loaded ${rawData.steps.length} animation frames for algorithm sequence. Ready to play!`, "success");
+        get().setIsPlaying(true);
       }
 
       addLog(`AI ARCHITECT: "${rawData.explanation}"`, "success");
@@ -770,6 +966,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
     const getStackLayout = (vals: number[], highlightIndex: number | null = null, highlightNext: boolean = false) => {
       const spacing = 1.0;
       const startY = -((vals.length - 1) * spacing) / 2;
+      const colors = ["#00E5FF", "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E", "#FF1744"];
       
       const stepNodes = vals.map((v, idx) => {
         const isTop = idx === vals.length - 1;
@@ -781,9 +978,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
         else if (isBase) label = `Base: ${v}`;
         
         const isHighlighted = idx === highlightIndex;
-        let color = "#80F";
-        if (isTop) color = "#FF1744";
-        else if (isBase) color = "#00E5FF";
+        let color = colors[idx % colors.length];
         
         if (isHighlighted) color = "#00E676";
         
@@ -884,6 +1079,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
     const getStackLayout = (vals: number[], highlightIndex: number | null = null, highlightNextDelete: boolean = false) => {
       const spacing = 1.0;
       const startY = -((vals.length - 1) * spacing) / 2;
+      const colors = ["#00E5FF", "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E", "#FF1744"];
       
       const stepNodes = vals.map((v, idx) => {
         const isTop = idx === vals.length - 1;
@@ -895,9 +1091,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
         else if (isBase) label = `Base: ${v}`;
         
         const isHighlighted = idx === highlightIndex;
-        let color = "#80F";
-        if (isTop) color = "#FF1744";
-        else if (isBase) color = "#00E5FF";
+        let color = colors[idx % colors.length];
         
         if (isHighlighted) color = "#FF1744";
         
@@ -991,6 +1185,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
     const steps: AlgStep[] = [];
     const spacing = 1.0;
     const startY = -((currentValues.length - 1) * spacing) / 2;
+    const colors = ["#00E5FF", "#3B82F6", "#6366F1", "#8B5CF6", "#EC4899", "#F43F5E", "#FF1744"];
 
     const highlightNodes = currentValues.map((v, idx) => {
       const isTop = idx === currentValues.length - 1;
@@ -1002,7 +1197,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
       else if (isBase) label = `Base: ${v}`;
       
       const isHighlighted = isTop;
-      let color = isHighlighted ? "#00E676" : (isBase ? "#00E5FF" : "#80F");
+      let color = isHighlighted ? "#00E676" : colors[idx % colors.length];
       
       return {
         id: `S-${idx}-${v}`,
@@ -2144,8 +2339,8 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
       steps,
       currentStepIndex: 0,
       explanation: `Executing BST ${type === "inorder" ? "In-Order" : type === "preorder" ? "Pre-Order" : "Post-Order"} traversal.`,
-      isPlaying: true,
     });
+    get().setIsPlaying(true);
     addLog(`Started BST ${type === "inorder" ? "In-Order" : type === "preorder" ? "Pre-Order" : "Post-Order"} traversal animation.`, "success");
   },
   traverseLinkedList: () => {
@@ -2274,8 +2469,8 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
       steps,
       currentStepIndex: 0,
       explanation: "Executing Linked List sequential traversal.",
-      isPlaying: true,
     });
+    get().setIsPlaying(true);
     addLog("Started Linked List sequential traversal animation.", "success");
   },
   traverseGraph: (type) => {
@@ -2287,7 +2482,7 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
 
     const baseNodes = nodes.map(n => ({
       id: String(n.id),
-      label: String(n.label),
+      label: String(n.label).replace(/^(?:Queue|Visiting|Visited|DFS Active|Backtracked):\s*/i, ""),
       position: n.position,
       color: n.color || "#80F"
     }));
@@ -2494,8 +2689,8 @@ Please calculate 3D coordinates, layout the nodes and edges, write the explanati
       steps,
       currentStepIndex: 0,
       explanation: `Executing Graph ${type.toUpperCase()} traversal.`,
-      isPlaying: true,
     });
+    get().setIsPlaying(true);
     addLog(`Started Graph ${type.toUpperCase()} traversal animation.`, "success");
   }
   }));

@@ -20,12 +20,7 @@ function HUDLayout() {
   const { quizQuestion } = useAlgorithmStore();
   const [showQuiz, setShowQuiz] = useState(false);
 
-  // Auto-reveal the quiz if a new customized AI quiz becomes available
-  useEffect(() => {
-    if (quizQuestion) {
-      setShowQuiz(true);
-    }
-  }, [quizQuestion]);
+
 
   return (
     <div className="absolute inset-0 z-30 pointer-events-none flex flex-col justify-between p-6">

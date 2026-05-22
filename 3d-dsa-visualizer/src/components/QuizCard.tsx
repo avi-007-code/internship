@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAlgorithmStore } from "../context/AlgorithmContext";
-import { BookOpen, CheckCircle, AlertCircle, HelpCircle, Sparkles, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { BookOpen, CheckCircle, AlertCircle, HelpCircle, Sparkles, ChevronLeft, ChevronRight, RotateCcw, X } from "lucide-react";
 
 interface Question {
   question: string;
@@ -35,7 +35,7 @@ const STATIC_PRESETS: Record<string, Question[]> = {
     },
     {
       question: "What is the worst-case space/time search complexity in a highly unbalanced BST (linear chain) of size N?",
-      options: ["O(1) constant", "O(log N)", "O(N) linear", "O(N log N)"],
+      options: ["O(1) constant", "O(log N)", "O(N) linear", "O(N) linear"],
       correct_index: 2,
       explanation: "If a BST is skewed like a chain, finding any node behaves like traversing a Singly Linked List, requiring O(N) comparisons.",
     },
@@ -222,166 +222,168 @@ export default function QuizCard({ onCollapse }: QuizCardProps) {
   }).length;
 
   return (
-    <div className="w-full max-w-sm bg-slate-900/60 border border-white/5 backdrop-blur-xl rounded-2xl shadow-xl p-5 text-white pointer-events-auto select-none transition-all duration-300">
-      
-      {/* 2. Top Navigation header */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-mono uppercase tracking-wider">
-          <BookOpen className="w-3.5 h-3.5 text-white/40" />
-          <span>Interactive Quiz Deck</span>
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md pointer-events-auto animate-fade-in">
+      <div className="w-full max-w-md bg-slate-900/90 border border-white/10 shadow-2xl p-6 backdrop-blur-xl rounded-2xl text-white pointer-events-auto select-none transition-all duration-300">
         
-        <div className="flex items-center gap-2">
-          {/* Score count header badges */}
-          {completedCount > 0 && (
-            <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/30 px-2 py-0.5 rounded-full font-medium">
-              Score: {correctCount}/{completedCount}
-            </span>
-          )}
+        {/* Top Navigation header */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-1.5 text-white/50 text-[10px] font-mono uppercase tracking-wider">
+            <BookOpen className="w-3.5 h-3.5 text-white/40" />
+            <span>Interactive Quiz Deck</span>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            {/* Score count header badges */}
+            {completedCount > 0 && (
+              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-800/30 px-2 py-0.5 rounded-full font-medium">
+                Score: {correctCount}/{completedCount}
+              </span>
+            )}
 
-          {/* Close/Minimize button */}
-          {onCollapse && (
-            <button
-              onClick={onCollapse}
-              title="Minimize Quiz"
-              className="p-1 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition duration-200"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-minimize-2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="10" x2="3" y1="14" y2="21"/></svg>
-            </button>
-          )}
+            {/* Exit/Close Button */}
+            {onCollapse && (
+              <button
+                onClick={onCollapse}
+                title="Close Quiz"
+                className="p-1 rounded-lg hover:bg-white/10 text-white/40 hover:text-white transition duration-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="space-y-3">
-        {/* Question sentence */}
-        <p className="text-[11.5px] font-medium text-white/95 leading-relaxed font-sans">
-          <span className="text-white/40 font-mono mr-1">Q{currentIdx + 1}.</span>
-          {activeQuestion.question}
-        </p>
+        <div className="space-y-3">
+          {/* Question sentence */}
+          <p className="text-white/95 leading-relaxed font-sans text-[14px] font-semibold">
+            <span className="text-white/40 font-mono mr-1">Q{currentIdx + 1}.</span>
+            {activeQuestion.question}
+          </p>
 
-        {/* Options lists */}
-        <div className="space-y-1.5">
-          {activeQuestion.options.map((opt, opIdx) => {
-            const isSelected = selectedAns === opIdx;
-            const isCorrectAnswer = activeQuestion.correct_index === opIdx;
+          {/* Options lists */}
+          <div className="space-y-1.5">
+            {activeQuestion.options.map((opt, opIdx) => {
+              const isSelected = selectedAns === opIdx;
+              const isCorrectAnswer = activeQuestion.correct_index === opIdx;
 
-            let optionStyle = "border-white/5 bg-white/5 hover:bg-white/10 text-white/70";
-            if (isSelected) {
-              optionStyle = "bg-white/15 border-white text-white font-semibold";
-            }
-            if (isSubmitted) {
+              let optionStyle = "border-white/5 bg-white/5 hover:bg-white/10 text-white/70";
               if (isSelected) {
-                optionStyle = isCorrectAnswer
-                  ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-medium"
-                  : "bg-rose-500/10 border-rose-500/50 text-rose-300";
-              } else if (isCorrectAnswer) {
-                optionStyle = "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 font-medium";
-              } else {
-                optionStyle = "border-white/5 text-white/30 opacity-40";
+                optionStyle = "bg-white/15 border-white text-white font-semibold";
               }
-            }
+              if (isSubmitted) {
+                if (isSelected) {
+                  optionStyle = isCorrectAnswer
+                    ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-medium"
+                    : "bg-rose-500/10 border-rose-500/50 text-rose-300";
+                } else if (isCorrectAnswer) {
+                  optionStyle = "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 font-medium";
+                } else {
+                  optionStyle = "border-white/5 text-white/30 opacity-40";
+                }
+              }
 
-            return (
-              <button
-                key={opIdx}
-                type="button"
-                disabled={isSubmitted}
-                onClick={() => handleSelectOption(opIdx)}
-                className={`w-full text-left px-3 py-2 rounded-xl border text-[11px] font-sans transition-all duration-150 flex items-center justify-between ${optionStyle}`}
-              >
-                <span>{opt}</span>
-                {isSelected && !isSubmitted && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-white shadow-md animate-pulse" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action Controls for verify and feedback */}
-        <div className="pt-1.5">
-          {!isSubmitted ? (
-            <button
-              type="button"
-              onClick={handleVerify}
-              disabled={selectedAns === undefined}
-              className={`w-full py-1.5 text-center text-[10px] font-semibold font-sans uppercase rounded-xl transition duration-200 ${
-                selectedAns === undefined
-                  ? "bg-white/5 text-white/20 cursor-not-allowed"
-                  : "bg-white text-slate-950 font-bold hover:bg-slate-100 shadow-md active:scale-[0.98]"
-              }`}
-            >
-              Verify Answer
-            </button>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex gap-2 p-3 rounded-xl bg-white/5 border border-white/5 text-[10px] leading-relaxed font-sans text-white/70">
-                {selectedAns === activeQuestion.correct_index ? (
-                  <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                )}
-                <div>
-                  <span className="font-semibold block text-white/90">
-                    {selectedAns === activeQuestion.correct_index ? "Correct diagnosis!" : "Incorrect diagnosis."}
-                  </span>
-                  {activeQuestion.explanation}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="w-full py-1 hover:bg-white/5 text-center text-[9.5px] font-sans font-medium text-white/40 hover:text-white rounded-lg transition flex items-center justify-center gap-1.5"
-              >
-                <RotateCcw className="w-3 h-3" />
-                <span>Retry Choice</span>
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Horizontal Navigation row slider */}
-        <div className="border-t border-white/5 pt-3 mt-1 flex items-center justify-between pointer-events-auto">
-          <button
-            type="button"
-            disabled={currentIdx === 0}
-            onClick={() => setCurrentIdx(prev => prev - 1)}
-            className="p-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white disabled:opacity-20 transition"
-            title="Prev Question"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          <div className="flex items-center gap-1.5">
-            {questions.map((_, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => setCurrentIdx(idx)}
-                className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
-                  idx === currentIdx
-                    ? "bg-white scale-125"
-                    : submittedAnswers[idx]
-                    ? userAnswers[idx] === questions[idx]?.correct_index
-                      ? "bg-emerald-400"
-                      : "bg-rose-400"
-                    : "bg-white/20 hover:bg-white/45"
-                }`}
-              />
-            ))}
+              return (
+                <button
+                  key={opIdx}
+                  type="button"
+                  disabled={isSubmitted}
+                  onClick={() => handleSelectOption(opIdx)}
+                  className={`w-full text-left px-3 rounded-xl border font-sans transition-all duration-150 flex items-center justify-between text-[12.5px] py-2.5 ${optionStyle}`}
+                >
+                  <span>{opt}</span>
+                  {isSelected && !isSubmitted && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-white shadow-md animate-pulse" />
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          <button
-            type="button"
-            disabled={currentIdx === questions.length - 1}
-            onClick={() => setCurrentIdx(prev => prev + 1)}
-            className="p-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white disabled:opacity-20 transition"
-            title="Next Question"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+          {/* Action Controls for verify and feedback */}
+          <div className="pt-1.5">
+            {!isSubmitted ? (
+              <button
+                type="button"
+                onClick={handleVerify}
+                disabled={selectedAns === undefined}
+                className={`w-full text-center font-semibold font-sans uppercase rounded-xl transition duration-200 text-[11px] py-2 ${
+                  selectedAns === undefined
+                    ? "bg-white/5 text-white/20 cursor-not-allowed"
+                    : "bg-white text-slate-950 font-bold hover:bg-slate-100 shadow-md active:scale-[0.98]"
+                }`}
+              >
+                Verify Answer
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex gap-2 rounded-xl bg-white/5 border border-white/5 leading-relaxed font-sans text-white/70 p-4 text-[11px]">
+                  {selectedAns === activeQuestion.correct_index ? (
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <span className="font-semibold block text-white/90">
+                      {selectedAns === activeQuestion.correct_index ? "Correct diagnosis!" : "Incorrect diagnosis."}
+                    </span>
+                    {activeQuestion.explanation}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="w-full hover:bg-white/5 text-center font-sans font-medium text-white/40 hover:text-white rounded-lg transition flex items-center justify-center gap-1.5 py-1.5 text-[10.5px]"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Retry Choice</span>
+                </button>
+              </div>
+            )}
+          </div>
 
+          {/* Horizontal Navigation row slider */}
+          <div className="border-t border-white/5 pt-3 mt-1 flex items-center justify-between pointer-events-auto">
+            <button
+              type="button"
+              disabled={currentIdx === 0}
+              onClick={() => setCurrentIdx(prev => prev - 1)}
+              className="p-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white disabled:opacity-20 transition"
+              title="Prev Question"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              {questions.map((_, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setCurrentIdx(idx)}
+                  className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
+                    idx === currentIdx
+                      ? "bg-white scale-125"
+                      : submittedAnswers[idx]
+                      ? userAnswers[idx] === questions[idx]?.correct_index
+                        ? "bg-emerald-400"
+                        : "bg-rose-400"
+                      : "bg-white/20 hover:bg-white/45"
+                  }`}
+                />
+              ))}
+            </div>
+
+            <button
+              type="button"
+              disabled={currentIdx === questions.length - 1}
+              onClick={() => setCurrentIdx(prev => prev + 1)}
+              className="p-1 rounded-md hover:bg-white/5 text-white/40 hover:text-white disabled:opacity-20 transition"
+              title="Next Question"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+        </div>
       </div>
     </div>
   );
